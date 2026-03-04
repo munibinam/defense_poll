@@ -38,13 +38,14 @@ const storage = {
           if (!response.ok) throw new Error('Failed to reset');
           return true;
         } else {
-          // Import operation - check if it's from admin import
-          const lastItem = data[data.length - 1];
-          const isNewResponse = data.length === 1 || !lastItem.id;
+          // This could be either adding a new response OR importing data
+          // We need to get the current responses first to determine which
+          const currentDataResponse = await fetch(API_URL);
+          const currentData = await currentDataResponse.json();
+          const currentResponses = currentData.responses || [];
           
-          if (isNewResponse) {
-            // This is adding a new response (normal user submission)
-            // Extract the new response (last item)
+          if (data.length === currentResponses.length + 1) {
+            // This is adding a single new response
             const newResponse = data[data.length - 1];
             const response = await fetch(API_URL, {
               method: 'POST',
@@ -69,6 +70,23 @@ const storage = {
       return true;
     } catch (error) {
       console.error('Storage set error:', error);
+      throw error;
+    }
+  },
+
+  async addResponse(response) {
+    try {
+      const apiResponse = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response })
+      });
+      
+      if (!apiResponse.ok) throw new Error('Failed to save response');
+      const data = await apiResponse.json();
+      return data.responses;
+    } catch (error) {
+      console.error('Add response error:', error);
       throw error;
     }
   },

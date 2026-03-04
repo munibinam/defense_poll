@@ -186,15 +186,13 @@ export default function DefensePollGrid() {
     if (!mode) { setError("Please select a mode preference."); return; }
 
     const newResponse = {
-      id: Date.now(),
       name: name.trim(),
       slots: Array.from(selected),
       mode,
-      timestamp: new Date().toISOString(),
     };
-    const updated = [...responses, newResponse];
+    
     try {
-      await storage.set(STORAGE_KEY, JSON.stringify(updated));
+      const updated = await storage.addResponse(newResponse);
       setResponses(updated);
       setSubmitted(true);
       setError("");

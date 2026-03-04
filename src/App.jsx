@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import storage from "./storage";
 
 const STORAGE_KEY = "defense-poll-grid-v1";
 
@@ -52,9 +53,11 @@ export default function DefensePollGrid() {
   useEffect(() => {
     (async () => {
       try {
-        const result = await window.storage.get(STORAGE_KEY, true);
+        const result = await storage.get(STORAGE_KEY);
         if (result) setResponses(JSON.parse(result.value));
-      } catch {}
+      } catch (error) {
+        console.error('Failed to load responses:', error);
+      }
       setLoading(false);
     })();
   }, []);
@@ -112,11 +115,12 @@ export default function DefensePollGrid() {
     };
     const updated = [...responses, newResponse];
     try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(updated), true);
+      await storage.set(STORAGE_KEY, JSON.stringify(updated));
       setResponses(updated);
       setSubmitted(true);
       setError("");
-    } catch {
+    } catch (error) {
+      console.error('Failed to save response:', error);
       setError("Something went wrong. Please try again.");
     }
   }

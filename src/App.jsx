@@ -100,6 +100,9 @@ export default function DefensePollGrid() {
   const [userTimezone, setUserTimezone] = useState("");
   const [timezoneAbbr, setTimezoneAbbr] = useState("");
   const [displayTimes, setDisplayTimes] = useState(TIMES);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
   const isDragging = useRef(false);
   const dragMode = useRef(null); // "add" or "remove"
   
@@ -189,6 +192,78 @@ export default function DefensePollGrid() {
     } catch (error) {
       console.error('Failed to save response:', error);
       setError("Something went wrong. Please try again.");
+    }
+  }
+
+  // Admin functions
+  function handleAdminLogin() {
+    // Simple password check - you should change this password!
+    if (adminPassword === "admin2026") {
+      setIsAdmin(true);
+      setShowAdminLogin(false);
+      setAdminPassword("");
+    } else {
+      alert("Incorrect password");
+    }
+  }
+
+  async function resetAllSubmissions() {
+    if (confirm("Are you sure you want to delete ALL submissions? This cannot be undone.")) {
+      try {
+        await storage.set(STORAGE_KEY, JSON.stringify([]));
+        setResponses([]);
+        alert("All submissions have been deleted.");
+      } catch (error) {
+        console.error('Failed to reset submissions:', error);
+        alert("Failed to reset submissions.");
+      }
+    }
+  }
+
+  async function deleteResponse(responseId) {
+    if (confirm("Are you sure you want to delete this response?")) {
+      const updated = responses.filter(r => r.id !== responseId);
+      try {
+        await storage.set(STORAGE_KEY, JSON.stringify(updated));
+        setResponses(updated);
+      } catch (error) {
+        console.error('Failed to delete response:', error);
+        alert("Failed to delete response.");
+      }
+    }
+  }
+
+  function exportData() {
+    const dataStr = JSON.stringify(responses, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `defense-poll-data-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importData(event) {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          if (Array.isArray(imported)) {
+            await storage.set(STORAGE_KEY, JSON.stringify(imported));
+            setResponses(imported);
+            alert(`Imported ${imported.length} responses successfully.`);
+          } else {
+            alert("Invalid data format.");
+          }
+        } catch (error) {
+          console.error('Import error:', error);
+          alert("Failed to import data. Please check the file format.");
+        }
+      };
+      reader.readAsText(file);
     }
   }
 
@@ -365,6 +440,59 @@ export default function DefensePollGrid() {
   return (
     <div style={base}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+      
+      {/* Admin Login Modal */}
+      {showAdminLogin && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.5)", display: "flex",
+          alignItems: "center", justifyContent: "center", zIndex: 1000,
+        }}>
+          <div style={{
+            background: "#fff", padding: "32px", borderRadius: "8px",
+            width: "320px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+          }}>
+            <h3 style={{ ...mono, fontSize: "14px", marginBottom: "20px" }}>Admin Login</h3>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={e => setAdminPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdminLogin()}
+              placeholder="Enter password"
+              style={{
+                ...mono, fontSize: "13px", padding: "9px 14px",
+                width: "100%", border: "1.5px solid #d4d0c8",
+                borderRadius: "4px", marginBottom: "16px",
+                boxSizing: "border-box",
+              }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={handleAdminLogin}
+                style={{
+                  ...mono, fontSize: "12px", background: "#2d5016",
+                  color: "#fff", border: "none", borderRadius: "4px",
+                  padding: "8px 16px", cursor: "pointer", flex: 1,
+                }}
+              >
+                Login
+              </button>
+              <button
+                onClick={() => { setShowAdminLogin(false); setAdminPassword(""); }}
+                style={{
+                  ...mono, fontSize: "12px", background: "#f0ede6",
+                  color: "#666", border: "none", borderRadius: "4px",
+                  padding: "8px 16px", cursor: "pointer", flex: 1,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
           <div>
@@ -375,16 +503,42 @@ export default function DefensePollGrid() {
               April 1 – April 23, 2026 {timezoneAbbr && `• Times shown in ${timezoneAbbr}`}
             </p>
           </div>
-          <button
-            onClick={() => setView(view === "form" ? "results" : "form")}
-            style={{
-              ...mono, fontSize: "11px", background: "none",
-              border: "1px solid #ccc", borderRadius: "4px",
-              padding: "5px 10px", cursor: "pointer", color: "#666", whiteSpace: "nowrap", marginLeft: "12px",
-            }}
-          >
-            {view === "form" ? `View Results (${totalResponses})` : "Back to Form"}
-          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => setView(view === "form" ? "results" : "form")}
+              style={{
+                ...mono, fontSize: "11px", background: "none",
+                border: "1px solid #ccc", borderRadius: "4px",
+                padding: "5px 10px", cursor: "pointer", color: "#666", whiteSpace: "nowrap",
+              }}
+            >
+              {view === "form" ? `View Results (${totalResponses})` : "Back to Form"}
+            </button>
+            {!isAdmin && (
+              <button
+                onClick={() => setShowAdminLogin(true)}
+                style={{
+                  ...mono, fontSize: "11px", background: "none",
+                  border: "1px solid #ccc", borderRadius: "4px",
+                  padding: "5px 10px", cursor: "pointer", color: "#666",
+                }}
+              >
+                Admin
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => setIsAdmin(false)}
+                style={{
+                  ...mono, fontSize: "11px", background: "#2d5016",
+                  border: "1px solid #2d5016", borderRadius: "4px",
+                  padding: "5px 10px", cursor: "pointer", color: "#fff",
+                }}
+              >
+                Exit Admin
+              </button>
+            )}
+          </div>
         </div>
 
         {view === "results" ? (
@@ -429,12 +583,78 @@ export default function DefensePollGrid() {
                     <span key={r.id} style={{
                       ...mono, fontSize: "12px", color: "#555",
                       background: "#f0ede6", borderRadius: "4px",
-                      padding: "4px 10px",
+                      padding: "4px 10px", position: "relative",
+                      paddingRight: isAdmin ? "28px" : "10px",
                     }}>
                       {r.name} ({r.mode})
+                      {isAdmin && (
+                        <button
+                          onClick={() => deleteResponse(r.id)}
+                          style={{
+                            position: "absolute", right: "4px", top: "50%",
+                            transform: "translateY(-50%)", background: "none",
+                            border: "none", color: "#c0392b", cursor: "pointer",
+                            fontSize: "14px", padding: "0 4px",
+                          }}
+                          title="Delete response"
+                        >
+                          ×
+                        </button>
+                      )}
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+            
+            {/* Admin Controls */}
+            {isAdmin && (
+              <div style={{
+                marginTop: "32px", padding: "20px",
+                background: "#faf9f6", borderRadius: "8px",
+                border: "1px solid #e8e4dc",
+              }}>
+                <span style={{ ...label, marginBottom: "16px" }}>Admin Controls</span>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    onClick={exportData}
+                    style={{
+                      ...mono, fontSize: "12px", background: "#2d5016",
+                      color: "#fff", border: "none", borderRadius: "4px",
+                      padding: "8px 16px", cursor: "pointer",
+                    }}
+                  >
+                    Export Data (JSON)
+                  </button>
+                  <label style={{
+                    ...mono, fontSize: "12px", background: "#fff",
+                    color: "#666", border: "1px solid #ccc", borderRadius: "4px",
+                    padding: "8px 16px", cursor: "pointer",
+                  }}>
+                    Import Data
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={importData}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                  <button
+                    onClick={resetAllSubmissions}
+                    style={{
+                      ...mono, fontSize: "12px", background: "#c0392b",
+                      color: "#fff", border: "none", borderRadius: "4px",
+                      padding: "8px 16px", cursor: "pointer",
+                    }}
+                  >
+                    Reset All Submissions
+                  </button>
+                </div>
+                <p style={{ ...mono, fontSize: "11px", color: "#888", marginTop: "12px" }}>
+                  Total responses: {responses.length} | 
+                  Storage: localStorage (browser-based) |
+                  Password: admin2026 (change in code)
+                </p>
               </div>
             )}
           </div>

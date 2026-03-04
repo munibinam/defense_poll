@@ -3,6 +3,55 @@ import storage from "./storage";
 
 const STORAGE_KEY = "defense-poll-grid-v1";
 
+// Get user's timezone
+const getUserTimezone = () => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+};
+
+// Get timezone abbreviation
+const getTimezoneAbbr = () => {
+  const date = new Date('2026-04-01'); // April date for DST
+  const timeStr = date.toLocaleTimeString('en-US', { 
+    timeZoneName: 'short',
+    timeZone: getUserTimezone()
+  });
+  return timeStr.split(' ').pop(); // Get the timezone part (e.g., "EDT", "PDT")
+};
+
+// Convert time slot to user's local time
+const convertToLocalTime = (date, timeStr) => {
+  const [time, period] = timeStr.split(' ');
+  const [hours, minutes] = time.split(':').map(Number);
+  let hour24 = hours;
+  
+  if (period === 'PM' && hours !== 12) hour24 += 12;
+  if (period === 'AM' && hours === 12) hour24 = 0;
+  
+  // Create date in ET (Eastern Time)
+  const etDate = new Date(date);
+  etDate.setHours(hour24, minutes, 0, 0);
+  
+  // Format for user's local timezone
+  return etDate.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: getUserTimezone()
+  });
+};
+
+// Format time for display (keeping original if in ET)
+const formatTimeForDisplay = (timeStr) => {
+  const userTz = getUserTimezone();
+  const isET = userTz === 'America/New_York' || userTz === 'America/Toronto';
+  
+  if (isET) return timeStr;
+  
+  // Convert from ET to user's timezone
+  const testDate = new Date('2026-04-01'); // Using a date in April
+  return convertToLocalTime(testDate, timeStr);
+};
+
 const DAYS = [];
 const start = new Date(2026, 3, 1);
 const end = new Date(2026, 3, 23);
@@ -21,6 +70,7 @@ const TIMES = [
   "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM",
   "1:00 PM", "1:30 PM", "2:00 PM", "2:30 PM",
   "3:00 PM", "3:30 PM", "4:00 PM", "4:30 PM",
+  "5:00 PM", "5:30 PM", "6:00 PM",
 ];
 
 const SLOT_ID = (dayKey, time) => `${dayKey}|${time}`;
@@ -47,8 +97,25 @@ export default function DefensePollGrid() {
   const [error, setError] = useState("");
   const [hoveredSlot, setHoveredSlot] = useState(null);
   const [currentWeek, setCurrentWeek] = useState(0);
+  const [userTimezone, setUserTimezone] = useState("");
+  const [timezoneAbbr, setTimezoneAbbr] = useState("");
+  const [displayTimes, setDisplayTimes] = useState(TIMES);
   const isDragging = useRef(false);
   const dragMode = useRef(null); // "add" or "remove"
+  
+  // Set timezone and display times on mount
+  useEffect(() => {
+    const tz = getUserTimezone();
+    const abbr = getTimezoneAbbr();
+    setUserTimezone(tz);
+    setTimezoneAbbr(abbr);
+    
+    // Convert times if not in ET
+    const isET = tz === 'America/New_York' || tz === 'America/Toronto';
+    if (!isET) {
+      setDisplayTimes(TIMES.map(time => formatTimeForDisplay(time)));
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -188,8 +255,8 @@ export default function DefensePollGrid() {
             </tr>
           </thead>
           <tbody>
-            {TIMES.map((time, ti) => (
-              <tr key={time}>
+            {displayTimes.map((displayTime, ti) => (
+              <tr key={TIMES[ti]}>
                 <td style={{
                   ...mono,
                   fontSize: "11px",
@@ -201,10 +268,10 @@ export default function DefensePollGrid() {
                   whiteSpace: "nowrap",
                   verticalAlign: "middle",
                 }}>
-                  {time.endsWith(":00 AM") || time.endsWith(":00 PM") ? time : ""}
+                  {displayTime.includes(":00") ? displayTime : ""}
                 </td>
                 {displayedDays.map(d => {
-                  const slotId = SLOT_ID(d.key, time);
+                  const slotId = SLOT_ID(d.key, TIMES[ti]);
                   const isSelected = interactive ? selected.has(slotId) : false;
                   const count = slotCounts[slotId] || 0;
                   const bg = interactive
@@ -304,7 +371,9 @@ export default function DefensePollGrid() {
             <h1 style={{ fontFamily: "Georgia, serif", fontSize: "21px", fontWeight: "normal", color: "#1a1a1a", margin: 0 }}>
               Dissertation Defense Scheduling
             </h1>
-            <p style={{ ...mono, fontSize: "12px", color: "#888", marginTop: "4px" }}>April 1 – April 23, 2026</p>
+            <p style={{ ...mono, fontSize: "12px", color: "#888", marginTop: "4px" }}>
+              April 1 – April 23, 2026 {timezoneAbbr && `• Times shown in ${timezoneAbbr}`}
+            </p>
           </div>
           <button
             onClick={() => setView(view === "form" ? "results" : "form")}
@@ -382,9 +451,16 @@ export default function DefensePollGrid() {
           </div>
         ) : (
           <div style={{ marginTop: "24px" }}>
-            <p style={{ fontFamily: "Georgia, serif", fontSize: "14px", color: "#555", marginBottom: "24px", lineHeight: "1.7" }}>
-              Click or drag across the grid to mark all slots that work for you. Then indicate your mode preference below.
-            </p>
+            <div style={{ marginBottom: "24px" }}>
+              <p style={{ fontFamily: "Georgia, serif", fontSize: "14px", color: "#555", marginBottom: "8px", lineHeight: "1.7" }}>
+                Click or drag across the grid to mark all slots that work for you. Then indicate your mode preference below.
+              </p>
+              {timezoneAbbr && timezoneAbbr !== 'EDT' && timezoneAbbr !== 'EST' && (
+                <p style={{ ...mono, fontSize: "11px", color: "#999", fontStyle: "italic" }}>
+                  Note: All times are automatically converted from Eastern Time to your local timezone ({timezoneAbbr}).
+                </p>
+              )}
+            </div>
 
             <div style={{ marginBottom: "20px" }}>
               <span style={label}>Your Name</span>

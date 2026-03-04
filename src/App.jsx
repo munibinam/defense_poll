@@ -166,9 +166,14 @@ export default function DefensePollGrid() {
   }
 
   function handleMouseDown(slotId) {
-    isDragging.current = true;
-    dragMode.current = selected.has(slotId) ? "remove" : "add";
+    // Always toggle on click, regardless of drag
+    const isSelected = selected.has(slotId);
+    dragMode.current = isSelected ? "remove" : "add";
     toggleSlot(slotId);
+    // Only set dragging after a delay to differentiate click from drag
+    setTimeout(() => {
+      isDragging.current = true;
+    }, 100);
   }
 
   function handleMouseEnter(slotId) {

@@ -1,28 +1,40 @@
-const STORAGE_KEY = 'defense-poll-responses';
+import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
-// Try to initialize storage - check what's available
-let storage = null;
-let storageType = 'none';
+// Simple in-memory storage for Vercel serverless
+let responseData = [];
+let initialized = false;
 
-try {
-  // First try Upstash Redis
-  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    const { Redis } = require('@upstash/redis');
-    storage = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    storageType = 'upstash';
+// Try to load data from a temporary file (this will reset on each deploy, but works for testing)
+function initStorage() {
+  if (initialized) return;
+  
+  try {
+    // Try to read from environment variable or use empty array
+    const dataStr = process.env.POLL_DATA || '[]';
+    responseData = JSON.parse(dataStr);
+  } catch (error) {
+    responseData = [];
   }
-  // Then try Vercel KV (for existing setups)
-  else if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    const { kv } = require('@vercel/kv');
-    storage = kv;
-    storageType = 'vercel-kv';
-  }
-} catch (error) {
-  console.log('Storage initialization error:', error);
+  
+  initialized = true;
 }
+
+// Simple storage interface
+const storage = {
+  get: () => {
+    initStorage();
+    return responseData;
+  },
+  
+  set: (data) => {
+    initStorage();
+    responseData = data;
+    return true;
+  }
+};
+
+const storageType = 'memory';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -35,26 +47,10 @@ export default async function handler(req, res) {
   }
   
   try {
-    // Check if we have any storage configured
-    if (!storage) {
-      let setupMessage = '';
-      if (process.env.EDGE_CONFIG) {
-        setupMessage = 'Edge Config detected but not suitable for app data. You need Redis/KV storage for dynamic data.';
-      } else {
-        setupMessage = 'No database configured. Please set up Upstash Redis or Vercel KV.';
-      }
-      
-      return res.status(500).json({ 
-        error: 'Database not configured', 
-        message: setupMessage,
-        setup: 'Go to Vercel Marketplace → Search "Upstash Redis" → Add Integration OR create a KV store in Storage tab'
-      });
-    }
-
     if (req.method === 'GET') {
       // Fetch all responses
-      const responses = await storage.get(STORAGE_KEY) || [];
-      return res.status(200).json({ responses, storageType });
+      const responses = storage.get() || [];
+      return res.status(200).json({ responses, storageType, note: 'Using in-memory storage - data resets on deployment' });
       
     } else if (req.method === 'POST') {
       // Add a new response or update all responses
@@ -62,26 +58,26 @@ export default async function handler(req, res) {
       
       if (action === 'reset') {
         // Reset all responses (admin action)
-        await storage.set(STORAGE_KEY, []);
+        storage.set([]);
         return res.status(200).json({ success: true, responses: [] });
       }
       
       if (action === 'import') {
         // Import responses (admin action)
-        await storage.set(STORAGE_KEY, allResponses || []);
+        storage.set(allResponses || []);
         return res.status(200).json({ success: true, responses: allResponses || [] });
       }
       
       if (response) {
         // Add a single new response
-        const currentResponses = await storage.get(STORAGE_KEY) || [];
+        const currentResponses = storage.get() || [];
         const newResponse = {
           ...response,
           id: Date.now(),
           timestamp: new Date().toISOString()
         };
         const updated = [...currentResponses, newResponse];
-        await storage.set(STORAGE_KEY, updated);
+        storage.set(updated);
         return res.status(200).json({ success: true, response: newResponse, responses: updated });
       }
       
@@ -94,9 +90,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Response ID required' });
       }
       
-      const currentResponses = await storage.get(STORAGE_KEY) || [];
+      const currentResponses = storage.get() || [];
       const updated = currentResponses.filter(r => r.id !== id);
-      await storage.set(STORAGE_KEY, updated);
+      storage.set(updated);
       return res.status(200).json({ success: true, responses: updated });
       
     } else {
@@ -104,16 +100,6 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('API error:', error);
-    
-    // If storage is not configured or has errors, return a clear error message
-    if (error.message && (error.message.includes('UPSTASH_REDIS_REST_URL') || error.message.includes('unauthorized') || error.message.includes('KV_REST_API_URL'))) {
-      return res.status(500).json({ 
-        error: 'Database not configured',
-        message: 'You need either Upstash Redis or Vercel KV for data storage. Edge Config is not suitable for dynamic app data.',
-        setup: 'Option 1: Vercel Marketplace → "Upstash Redis" → Add Integration\nOption 2: Vercel Dashboard → Storage → Create new KV store'
-      });
-    }
-    
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }

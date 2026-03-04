@@ -1,6 +1,12 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 const STORAGE_KEY = 'defense-poll-responses';
+
+// Initialize Redis client
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -15,7 +21,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       // Fetch all responses
-      const responses = await kv.get(STORAGE_KEY) || [];
+      const responses = await redis.get(STORAGE_KEY) || [];
       return res.status(200).json({ responses });
       
     } else if (req.method === 'POST') {
@@ -24,26 +30,26 @@ export default async function handler(req, res) {
       
       if (action === 'reset') {
         // Reset all responses (admin action)
-        await kv.set(STORAGE_KEY, []);
+        await redis.set(STORAGE_KEY, []);
         return res.status(200).json({ success: true, responses: [] });
       }
       
       if (action === 'import') {
         // Import responses (admin action)
-        await kv.set(STORAGE_KEY, allResponses || []);
+        await redis.set(STORAGE_KEY, allResponses || []);
         return res.status(200).json({ success: true, responses: allResponses || [] });
       }
       
       if (response) {
         // Add a single new response
-        const currentResponses = await kv.get(STORAGE_KEY) || [];
+        const currentResponses = await redis.get(STORAGE_KEY) || [];
         const newResponse = {
           ...response,
           id: Date.now(),
           timestamp: new Date().toISOString()
         };
         const updated = [...currentResponses, newResponse];
-        await kv.set(STORAGE_KEY, updated);
+        await redis.set(STORAGE_KEY, updated);
         return res.status(200).json({ success: true, response: newResponse, responses: updated });
       }
       
@@ -56,9 +62,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Response ID required' });
       }
       
-      const currentResponses = await kv.get(STORAGE_KEY) || [];
+      const currentResponses = await redis.get(STORAGE_KEY) || [];
       const updated = currentResponses.filter(r => r.id !== id);
-      await kv.set(STORAGE_KEY, updated);
+      await redis.set(STORAGE_KEY, updated);
       return res.status(200).json({ success: true, responses: updated });
       
     } else {
@@ -67,11 +73,11 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('API error:', error);
     
-    // If KV is not configured, return a clear error message
-    if (error.message && error.message.includes('KV_REST_API_URL')) {
+    // If Redis is not configured, return a clear error message
+    if (error.message && (error.message.includes('UPSTASH_REDIS_REST_URL') || error.message.includes('unauthorized'))) {
       return res.status(500).json({ 
-        error: 'Database not configured. Please set up Vercel KV in your dashboard.',
-        setup: 'Go to your Vercel project dashboard → Storage tab → Create KV database'
+        error: 'Database not configured. Please set up Upstash Redis integration.',
+        setup: 'Go to Vercel Marketplace → Search "Upstash Redis" → Add to project'
       });
     }
     

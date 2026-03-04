@@ -24,14 +24,14 @@ npm run dev
 
 1. Deploy to Vercel: `vercel`
 
-2. Set up Vercel KV Storage:
-   - Go to your Vercel project dashboard
-   - Navigate to "Storage" tab
-   - Create a new KV database
-   - Connect it to your project
+2. Set up Upstash Redis Integration:
+   - Go to [Vercel Marketplace](https://vercel.com/marketplace)
+   - Search for "Upstash Redis"  
+   - Click "Add Integration"
+   - Select your project and connect the integration
    - The environment variables will be automatically added
 
-3. **IMPORTANT**: Without KV setup, the app will fall back to localStorage (no data sharing between users)
+3. **IMPORTANT**: Without Redis setup, the app will show a setup error message
 
 ## Admin Access
 
@@ -45,12 +45,12 @@ npm run dev
 
 ## Data Storage
 
-- **With Vercel KV**: All users see the same shared data
-- **Without KV (fallback)**: Each browser stores its own data locally
+- **With Upstash Redis**: All users see the same shared data
+- **Without Redis**: App shows setup error and won't function
 
 ## Technologies
 
 - React + Vite
-- Vercel Serverless Functions
-- Vercel KV (Redis) for storage
+- Vercel Serverless Functions  
+- Upstash Redis for storage
 - Automatic timezone detection

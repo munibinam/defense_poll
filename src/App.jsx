@@ -132,7 +132,7 @@ export default function DefensePollGrid() {
         
         // Check if this is a setup error
         if (error.message && error.message.includes('Database not configured')) {
-          setSetupError("Database not configured. Please set up Vercel KV storage to enable shared responses.");
+          setSetupError("Database not configured. Please set up Upstash Redis integration to enable shared responses.");
         } else {
           setSetupError("Failed to connect to database. Please try refreshing the page.");
         }
@@ -566,7 +566,7 @@ export default function DefensePollGrid() {
                   {setupError}
                 </div>
                 <div style={{ ...mono, fontSize: "12px", color: "#a0770a" }}>
-                  Go to Vercel Dashboard → Your Project → Storage tab → Create KV database
+                  Go to Vercel Marketplace → Search "Upstash Redis" → Add Integration
                 </div>
               </div>
             </div>

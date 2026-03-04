@@ -1,12 +1,28 @@
-import { Redis } from '@upstash/redis';
-
 const STORAGE_KEY = 'defense-poll-responses';
 
-// Initialize Redis client
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+// Try to initialize storage - check what's available
+let storage = null;
+let storageType = 'none';
+
+try {
+  // First try Upstash Redis
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    const { Redis } = require('@upstash/redis');
+    storage = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    storageType = 'upstash';
+  }
+  // Then try Vercel KV (for existing setups)
+  else if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    const { kv } = require('@vercel/kv');
+    storage = kv;
+    storageType = 'vercel-kv';
+  }
+} catch (error) {
+  console.log('Storage initialization error:', error);
+}
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -19,10 +35,26 @@ export default async function handler(req, res) {
   }
   
   try {
+    // Check if we have any storage configured
+    if (!storage) {
+      let setupMessage = '';
+      if (process.env.EDGE_CONFIG) {
+        setupMessage = 'Edge Config detected but not suitable for app data. You need Redis/KV storage for dynamic data.';
+      } else {
+        setupMessage = 'No database configured. Please set up Upstash Redis or Vercel KV.';
+      }
+      
+      return res.status(500).json({ 
+        error: 'Database not configured', 
+        message: setupMessage,
+        setup: 'Go to Vercel Marketplace → Search "Upstash Redis" → Add Integration OR create a KV store in Storage tab'
+      });
+    }
+
     if (req.method === 'GET') {
       // Fetch all responses
-      const responses = await redis.get(STORAGE_KEY) || [];
-      return res.status(200).json({ responses });
+      const responses = await storage.get(STORAGE_KEY) || [];
+      return res.status(200).json({ responses, storageType });
       
     } else if (req.method === 'POST') {
       // Add a new response or update all responses
@@ -30,26 +62,26 @@ export default async function handler(req, res) {
       
       if (action === 'reset') {
         // Reset all responses (admin action)
-        await redis.set(STORAGE_KEY, []);
+        await storage.set(STORAGE_KEY, []);
         return res.status(200).json({ success: true, responses: [] });
       }
       
       if (action === 'import') {
         // Import responses (admin action)
-        await redis.set(STORAGE_KEY, allResponses || []);
+        await storage.set(STORAGE_KEY, allResponses || []);
         return res.status(200).json({ success: true, responses: allResponses || [] });
       }
       
       if (response) {
         // Add a single new response
-        const currentResponses = await redis.get(STORAGE_KEY) || [];
+        const currentResponses = await storage.get(STORAGE_KEY) || [];
         const newResponse = {
           ...response,
           id: Date.now(),
           timestamp: new Date().toISOString()
         };
         const updated = [...currentResponses, newResponse];
-        await redis.set(STORAGE_KEY, updated);
+        await storage.set(STORAGE_KEY, updated);
         return res.status(200).json({ success: true, response: newResponse, responses: updated });
       }
       
@@ -62,9 +94,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Response ID required' });
       }
       
-      const currentResponses = await redis.get(STORAGE_KEY) || [];
+      const currentResponses = await storage.get(STORAGE_KEY) || [];
       const updated = currentResponses.filter(r => r.id !== id);
-      await redis.set(STORAGE_KEY, updated);
+      await storage.set(STORAGE_KEY, updated);
       return res.status(200).json({ success: true, responses: updated });
       
     } else {
@@ -73,11 +105,12 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('API error:', error);
     
-    // If Redis is not configured, return a clear error message
-    if (error.message && (error.message.includes('UPSTASH_REDIS_REST_URL') || error.message.includes('unauthorized'))) {
+    // If storage is not configured or has errors, return a clear error message
+    if (error.message && (error.message.includes('UPSTASH_REDIS_REST_URL') || error.message.includes('unauthorized') || error.message.includes('KV_REST_API_URL'))) {
       return res.status(500).json({ 
-        error: 'Database not configured. Please set up Upstash Redis integration.',
-        setup: 'Go to Vercel Marketplace → Search "Upstash Redis" → Add to project'
+        error: 'Database not configured',
+        message: 'You need either Upstash Redis or Vercel KV for data storage. Edge Config is not suitable for dynamic app data.',
+        setup: 'Option 1: Vercel Marketplace → "Upstash Redis" → Add Integration\nOption 2: Vercel Dashboard → Storage → Create new KV store'
       });
     }
     

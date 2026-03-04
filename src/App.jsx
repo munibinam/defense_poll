@@ -1,0 +1,451 @@
+import { useState, useEffect, useRef } from "react";
+
+const STORAGE_KEY = "defense-poll-grid-v1";
+
+const DAYS = [];
+const start = new Date(2026, 3, 1);
+const end = new Date(2026, 3, 23);
+for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+  const day = d.getDay();
+  if (day !== 0 && day !== 6) {
+    DAYS.push({
+      label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      key: d.toISOString().slice(0, 10),
+    });
+  }
+}
+
+const TIMES = [
+  "9:00 AM", "9:30 AM", "10:00 AM", "10:30 AM",
+  "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM",
+  "1:00 PM", "1:30 PM", "2:00 PM", "2:30 PM",
+  "3:00 PM", "3:30 PM", "4:00 PM", "4:30 PM",
+];
+
+const SLOT_ID = (dayKey, time) => `${dayKey}|${time}`;
+
+// Group days by week for display
+const WEEKS = [];
+let week = [];
+DAYS.forEach((d, i) => {
+  week.push(d);
+  if (week.length === 5 || i === DAYS.length - 1) {
+    WEEKS.push(week);
+    week = [];
+  }
+});
+
+export default function DefensePollGrid() {
+  const [view, setView] = useState("form");
+  const [name, setName] = useState("");
+  const [mode, setMode] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [responses, setResponses] = useState([]);
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [hoveredSlot, setHoveredSlot] = useState(null);
+  const [currentWeek, setCurrentWeek] = useState(0);
+  const isDragging = useRef(false);
+  const dragMode = useRef(null); // "add" or "remove"
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await window.storage.get(STORAGE_KEY, true);
+        if (result) setResponses(JSON.parse(result.value));
+      } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  // Compute overlap counts per slot
+  const slotCounts = {};
+  responses.forEach(r => {
+    (r.slots || []).forEach(s => {
+      slotCounts[s] = (slotCounts[s] || 0) + 1;
+    });
+  });
+  const maxCount = Math.max(...Object.values(slotCounts), 1);
+  const totalResponses = responses.length;
+
+  function toggleSlot(slotId) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (dragMode.current === "add") next.add(slotId);
+      else if (dragMode.current === "remove") next.delete(slotId);
+      else {
+        if (next.has(slotId)) next.delete(slotId);
+        else next.add(slotId);
+      }
+      return next;
+    });
+  }
+
+  function handleMouseDown(slotId) {
+    isDragging.current = true;
+    dragMode.current = selected.has(slotId) ? "remove" : "add";
+    toggleSlot(slotId);
+  }
+
+  function handleMouseEnter(slotId) {
+    if (isDragging.current) toggleSlot(slotId);
+  }
+
+  useEffect(() => {
+    const up = () => { isDragging.current = false; dragMode.current = null; };
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
+
+  async function saveResponse() {
+    if (!name.trim()) { setError("Please enter your name."); return; }
+    if (selected.size === 0) { setError("Please select at least one available slot."); return; }
+    if (!mode) { setError("Please select a mode preference."); return; }
+
+    const newResponse = {
+      id: Date.now(),
+      name: name.trim(),
+      slots: Array.from(selected),
+      mode,
+      timestamp: new Date().toISOString(),
+    };
+    const updated = [...responses, newResponse];
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(updated), true);
+      setResponses(updated);
+      setSubmitted(true);
+      setError("");
+    } catch {
+      setError("Something went wrong. Please try again.");
+    }
+  }
+
+  function getColor(count) {
+    if (count === 0) return "#f0ede6";
+    const intensity = count / maxCount;
+    if (intensity < 0.33) return "#b5d4a0";
+    if (intensity < 0.66) return "#6aac4e";
+    return "#2d5016";
+  }
+
+  function getTextColor(count) {
+    if (count === 0) return "#bbb";
+    const intensity = count / maxCount;
+    return intensity > 0.5 ? "#fff" : "#1a1a1a";
+  }
+
+  const displayedDays = WEEKS[currentWeek] || [];
+
+  const base = {
+    minHeight: "100vh",
+    background: "#f5f2ec",
+    fontFamily: "'Georgia', serif",
+    display: "flex",
+    justifyContent: "center",
+    padding: "36px 16px",
+    userSelect: "none",
+  };
+
+  const card = {
+    background: "#fff",
+    border: "1px solid #ddd8ce",
+    borderRadius: "8px",
+    padding: "36px",
+    maxWidth: "860px",
+    width: "100%",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+  };
+
+  const mono = { fontFamily: "'DM Mono', monospace" };
+  const label = { ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "#2d5016", textTransform: "uppercase", display: "block", marginBottom: "10px" };
+
+  function Grid({ interactive }) {
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", tableLayout: "fixed", width: "100%" }}>
+          <thead>
+            <tr>
+              <th style={{ width: "72px" }} />
+              {displayedDays.map(d => (
+                <th key={d.key} style={{
+                  ...mono,
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  color: "#444",
+                  textAlign: "center",
+                  padding: "0 0 12px 0",
+                  letterSpacing: "0.03em",
+                  lineHeight: "1.4",
+                }}>
+                  {d.label.split(", ").map((part, i) => <div key={i}>{part}</div>)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TIMES.map((time, ti) => (
+              <tr key={time}>
+                <td style={{
+                  ...mono,
+                  fontSize: "11px",
+                  color: "#888",
+                  textAlign: "right",
+                  paddingRight: "10px",
+                  paddingTop: "1px",
+                  paddingBottom: "1px",
+                  whiteSpace: "nowrap",
+                  verticalAlign: "middle",
+                }}>
+                  {time.endsWith(":00 AM") || time.endsWith(":00 PM") ? time : ""}
+                </td>
+                {displayedDays.map(d => {
+                  const slotId = SLOT_ID(d.key, time);
+                  const isSelected = interactive ? selected.has(slotId) : false;
+                  const count = slotCounts[slotId] || 0;
+                  const bg = interactive
+                    ? isSelected ? "#2d5016" : "#f0ede6"
+                    : getColor(count);
+
+                  return (
+                    <td
+                      key={slotId}
+                      onMouseDown={interactive ? () => handleMouseDown(slotId) : undefined}
+                      onMouseEnter={interactive ? () => handleMouseEnter(slotId) : () => setHoveredSlot(slotId)}
+                      onMouseLeave={interactive ? undefined : () => setHoveredSlot(null)}
+                      style={{
+                        background: bg,
+                        border: "1px solid #e8e4dc",
+                        height: "22px",
+                        cursor: interactive ? "pointer" : "default",
+                        transition: "background 0.1s",
+                        position: "relative",
+                      }}
+                    >
+                      {!interactive && count > 0 && hoveredSlot === slotId && (
+                        <div style={{
+                          position: "absolute",
+                          bottom: "110%",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "#1a1a1a",
+                          color: "#fff",
+                          ...mono,
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          borderRadius: "4px",
+                          whiteSpace: "nowrap",
+                          zIndex: 10,
+                          pointerEvents: "none",
+                        }}>
+                          {count} / {totalResponses} available
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function WeekNav() {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+        <button
+          onClick={() => setCurrentWeek(w => Math.max(0, w - 1))}
+          disabled={currentWeek === 0}
+          style={{
+            ...mono, fontSize: "13px", background: "none",
+            border: "1px solid #ccc", borderRadius: "4px",
+            padding: "4px 10px", cursor: currentWeek === 0 ? "default" : "pointer",
+            color: currentWeek === 0 ? "#ccc" : "#444",
+          }}
+        >
+          &larr;
+        </button>
+        <span style={{ ...mono, fontSize: "12px", color: "#666" }}>
+          Week {currentWeek + 1} of {WEEKS.length}
+        </span>
+        <button
+          onClick={() => setCurrentWeek(w => Math.min(WEEKS.length - 1, w + 1))}
+          disabled={currentWeek === WEEKS.length - 1}
+          style={{
+            ...mono, fontSize: "13px", background: "none",
+            border: "1px solid #ccc", borderRadius: "4px",
+            padding: "4px 10px", cursor: currentWeek === WEEKS.length - 1 ? "default" : "pointer",
+            color: currentWeek === WEEKS.length - 1 ? "#ccc" : "#444",
+          }}
+        >
+          &rarr;
+        </button>
+        <span style={{ ...mono, fontSize: "11px", color: "#aaa", marginLeft: "4px" }}>
+          Click and drag to select slots
+        </span>
+      </div>
+    );
+  }
+
+  if (loading) return <div style={{ ...base, alignItems: "center" }}><p style={{ ...mono, color: "#888" }}>Loading...</p></div>;
+
+  return (
+    <div style={base}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+      <div style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
+          <div>
+            <h1 style={{ fontFamily: "Georgia, serif", fontSize: "21px", fontWeight: "normal", color: "#1a1a1a", margin: 0 }}>
+              Dissertation Defense Scheduling
+            </h1>
+            <p style={{ ...mono, fontSize: "12px", color: "#888", marginTop: "4px" }}>April 1 – April 23, 2026</p>
+          </div>
+          <button
+            onClick={() => setView(view === "form" ? "results" : "form")}
+            style={{
+              ...mono, fontSize: "11px", background: "none",
+              border: "1px solid #ccc", borderRadius: "4px",
+              padding: "5px 10px", cursor: "pointer", color: "#666", whiteSpace: "nowrap", marginLeft: "12px",
+            }}
+          >
+            {view === "form" ? `View Results (${totalResponses})` : "Back to Form"}
+          </button>
+        </div>
+
+        {view === "results" ? (
+          <div style={{ marginTop: "24px" }}>
+            <p style={{ ...mono, fontSize: "13px", color: "#555", marginBottom: "20px" }}>
+              {totalResponses} {totalResponses === 1 ? "response" : "responses"} — darker green means more overlap
+            </p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "20px" }}>
+              <span style={{ ...mono, fontSize: "11px", color: "#888" }}>0</span>
+              {[0.1, 0.3, 0.6, 1.0].map(v => (
+                <div key={v} style={{ width: "24px", height: "14px", background: getColor(v * maxCount), borderRadius: "2px" }} />
+              ))}
+              <span style={{ ...mono, fontSize: "11px", color: "#888" }}>{maxCount}</span>
+              <span style={{ ...mono, fontSize: "11px", color: "#888", marginLeft: "4px" }}>available</span>
+            </div>
+
+            <WeekNav />
+            <Grid interactive={false} />
+
+            {responses.length > 0 && (
+              <div style={{ marginTop: "28px" }}>
+                <span style={label}>Mode Preferences</span>
+                <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+                  {["In-Person", "Virtual", "No Preference"].map(m => {
+                    const count = responses.filter(r => r.mode === m).length;
+                    return (
+                      <div key={m} style={{ ...mono, fontSize: "13px", color: "#444" }}>
+                        {m}: <strong>{count}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {responses.length > 0 && (
+              <div style={{ marginTop: "24px" }}>
+                <span style={label}>Respondents</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  {responses.map(r => (
+                    <span key={r.id} style={{
+                      ...mono, fontSize: "12px", color: "#555",
+                      background: "#f0ede6", borderRadius: "4px",
+                      padding: "4px 10px",
+                    }}>
+                      {r.name} ({r.mode})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : submitted ? (
+          <div style={{ textAlign: "center", padding: "48px 0" }}>
+            <div style={{ fontSize: "28px", marginBottom: "12px" }}>✓</div>
+            <p style={{ ...mono, fontSize: "13px", color: "#2d5016", marginBottom: "8px" }}>Response recorded. Thank you.</p>
+            <button
+              onClick={() => { setSubmitted(false); setName(""); setSelected(new Set()); setMode(null); }}
+              style={{ ...mono, fontSize: "12px", color: "#888", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+            >
+              Submit another response
+            </button>
+          </div>
+        ) : (
+          <div style={{ marginTop: "24px" }}>
+            <p style={{ fontFamily: "Georgia, serif", fontSize: "14px", color: "#555", marginBottom: "24px", lineHeight: "1.7" }}>
+              Click or drag across the grid to mark all slots that work for you. Then indicate your mode preference below.
+            </p>
+
+            <div style={{ marginBottom: "20px" }}>
+              <span style={label}>Your Name</span>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Full name"
+                style={{
+                  ...mono, fontSize: "13px",
+                  padding: "9px 14px", width: "280px",
+                  border: "1.5px solid #d4d0c8", borderRadius: "4px",
+                  background: "#faf9f6", outline: "none", boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <span style={label}>Mode Preference</span>
+              <div style={{ display: "flex", gap: "10px" }}>
+                {["In-Person", "Virtual", "No Preference"].map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    style={{
+                      ...mono, fontSize: "12px",
+                      padding: "6px 14px",
+                      border: mode === m ? "2px solid #2d5016" : "2px solid #d4d0c8",
+                      borderRadius: "4px",
+                      background: mode === m ? "#2d5016" : "#faf9f6",
+                      color: mode === m ? "#fff" : "#555",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <span style={label}>
+                Available Slots
+                {selected.size > 0 && <span style={{ color: "#888", marginLeft: "8px", textTransform: "none", letterSpacing: 0 }}>({selected.size} selected)</span>}
+              </span>
+              <WeekNav />
+              <Grid interactive={true} />
+            </div>
+
+            {error && <p style={{ ...mono, fontSize: "12px", color: "#c0392b", marginBottom: "14px" }}>{error}</p>}
+
+            <button
+              onClick={saveResponse}
+              style={{
+                background: "#2d5016", color: "#fff",
+                border: "none", borderRadius: "4px",
+                padding: "11px 28px",
+                ...mono, fontSize: "13px", fontWeight: "600",
+                cursor: "pointer", letterSpacing: "0.05em",
+              }}
+            >
+              Submit
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

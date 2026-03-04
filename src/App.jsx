@@ -222,9 +222,8 @@ export default function DefensePollGrid() {
 
   async function deleteResponse(responseId) {
     if (confirm("Are you sure you want to delete this response?")) {
-      const updated = responses.filter(r => r.id !== responseId);
       try {
-        await storage.set(STORAGE_KEY, JSON.stringify(updated));
+        const updated = await storage.deleteResponse(responseId);
         setResponses(updated);
       } catch (error) {
         console.error('Failed to delete response:', error);

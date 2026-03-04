@@ -103,6 +103,7 @@ export default function DefensePollGrid() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  const [setupError, setSetupError] = useState("");
   const isDragging = useRef(false);
   const dragMode = useRef(null); // "add" or "remove"
   
@@ -125,8 +126,16 @@ export default function DefensePollGrid() {
       try {
         const result = await storage.get(STORAGE_KEY);
         if (result) setResponses(JSON.parse(result.value));
+        setSetupError(""); // Clear any previous errors
       } catch (error) {
         console.error('Failed to load responses:', error);
+        
+        // Check if this is a setup error
+        if (error.message && error.message.includes('Database not configured')) {
+          setSetupError("Database not configured. Please set up Vercel KV storage to enable shared responses.");
+        } else {
+          setSetupError("Failed to connect to database. Please try refreshing the page.");
+        }
       }
       setLoading(false);
     })();
@@ -539,6 +548,30 @@ export default function DefensePollGrid() {
             )}
           </div>
         </div>
+
+        {/* Setup Error Banner */}
+        {setupError && (
+          <div style={{
+            background: "#fff3cd", border: "1px solid #ffeaa7",
+            borderRadius: "6px", padding: "16px", marginBottom: "20px",
+            borderLeft: "4px solid #fdcb6e",
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div style={{ fontSize: "18px", marginTop: "2px" }}>⚠️</div>
+              <div>
+                <div style={{ ...mono, fontSize: "13px", fontWeight: "600", color: "#8b6914", marginBottom: "4px" }}>
+                  Database Setup Required
+                </div>
+                <div style={{ fontSize: "14px", color: "#8b6914", marginBottom: "8px" }}>
+                  {setupError}
+                </div>
+                <div style={{ ...mono, fontSize: "12px", color: "#a0770a" }}>
+                  Go to Vercel Dashboard → Your Project → Storage tab → Create KV database
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {view === "results" ? (
           <div style={{ marginTop: "24px" }}>

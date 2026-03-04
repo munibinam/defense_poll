@@ -6,27 +6,17 @@ const storage = {
   async get(key) {
     try {
       const response = await fetch(API_URL);
-      const data = await response.json();
-      
-      if (data.warning) {
-        console.warn('Storage warning:', data.warning);
-        // Fall back to localStorage if KV is not configured
-        const localData = localStorage.getItem(key);
-        if (localData) {
-          return { value: localData };
-        }
+      if (!response.ok) {
+        throw new Error(`Failed to fetch: ${response.status}`);
       }
+      const data = await response.json();
       
       // Return responses in the expected format
       return { value: JSON.stringify(data.responses || []) };
     } catch (error) {
       console.error('Storage get error:', error);
-      // Fall back to localStorage on error
-      const value = localStorage.getItem(key);
-      if (value) {
-        return { value };
-      }
-      return null;
+      // Return empty array on error - no fallback
+      return { value: JSON.stringify([]) };
     }
   },
 
@@ -46,9 +36,6 @@ const storage = {
           });
           
           if (!response.ok) throw new Error('Failed to reset');
-          
-          // Also clear localStorage as backup
-          localStorage.setItem(key, value);
           return true;
         } else {
           // Import operation - check if it's from admin import
@@ -79,14 +66,10 @@ const storage = {
         }
       }
       
-      // Also save to localStorage as backup
-      localStorage.setItem(key, value);
       return true;
     } catch (error) {
       console.error('Storage set error:', error);
-      // Fall back to localStorage on error
-      localStorage.setItem(key, value);
-      return true;
+      throw error;
     }
   },
 
@@ -107,10 +90,5 @@ const storage = {
     }
   }
 };
-
-// Make storage available globally for compatibility
-if (typeof window !== 'undefined') {
-  window.storage = storage;
-}
 
 export default storage;

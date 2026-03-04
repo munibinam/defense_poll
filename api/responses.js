@@ -67,11 +67,11 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error('API error:', error);
     
-    // If KV is not configured, fall back to in-memory storage for development
+    // If KV is not configured, return a clear error message
     if (error.message && error.message.includes('KV_REST_API_URL')) {
-      return res.status(200).json({ 
-        responses: [],
-        warning: 'KV storage not configured. Using fallback mode.'
+      return res.status(500).json({ 
+        error: 'Database not configured. Please set up Vercel KV in your dashboard.',
+        setup: 'Go to your Vercel project dashboard → Storage tab → Create KV database'
       });
     }
     

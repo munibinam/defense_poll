@@ -136,8 +136,9 @@ export default function DefensePollGrid() {
         } else {
           setSetupError("Failed to connect to database. Please try refreshing the page.");
         }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 

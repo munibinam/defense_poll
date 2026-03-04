@@ -7,7 +7,8 @@ const storage = {
     try {
       const response = await fetch(API_URL);
       if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch: ${response.status}`);
       }
       const data = await response.json();
       
@@ -15,8 +16,8 @@ const storage = {
       return { value: JSON.stringify(data.responses || []) };
     } catch (error) {
       console.error('Storage get error:', error);
-      // Return empty array on error - no fallback
-      return { value: JSON.stringify([]) };
+      // Re-throw the error so the app can handle it properly
+      throw error;
     }
   },
 
